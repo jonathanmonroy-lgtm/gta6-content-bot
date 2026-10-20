@@ -9,6 +9,10 @@ on:
         description: "Render a video even if today's video limit was reached"
         type: boolean
         default: false
+      ignore_seen:
+        description: "Reuse news already covered (to preview the format)"
+        type: boolean
+        default: false
 
 concurrency:
   group: bot
@@ -49,7 +53,7 @@ jobs:
           TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
           TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
           GH_SECRETS_TOKEN: ${{ secrets.GH_SECRETS_TOKEN }}
-        run: python -m gtabot ${{ inputs.force_video && '--force-video' || '' }}
+        run: python -m gtabot ${{ inputs.force_video && '--force-video' || '' }} ${{ inputs.ignore_seen && '--ignore-seen' || '' }}
 
       - name: Keep what was published
         if: always()

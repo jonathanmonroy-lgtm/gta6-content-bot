@@ -30,7 +30,7 @@ def compose_tweet(content: Content) -> str:
     return text
 
 
-def run(cfg: Config, *, force_video: bool = False) -> dict:
+def run(cfg: Config, *, force_video: bool = False, ignore_seen: bool = False) -> dict:
     state = State(cfg.state_path)
     posts_today = state.count_since("x_id")
     videos_today = state.count_since("video")
@@ -38,7 +38,7 @@ def run(cfg: Config, *, force_video: bool = False) -> dict:
         log.info("Daily post limit reached (%d)", posts_today)
         return {"status": "limit"}
 
-    items = [i for i in fetch_items(cfg.feeds) if not state.is_seen(i.id)]
+    items = [i for i in fetch_items(cfg.feeds) if ignore_seen or not state.is_seen(i.id)]
     log.info("%d new items", len(items))
 
     content = generate(cfg, items, state.recent_topics())
@@ -90,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="never publish, only render")
     parser.add_argument("--live", action="store_true", help="publish (overrides DRY_RUN env)")
     parser.add_argument("--force-video", action="store_true")
+    parser.add_argument("--ignore-seen", action="store_true", help="reuse news already covered (for tests)")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -100,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         cfg.dry_run = False
     log.info("Mode: %s | X: %s | TikTok: %s | Claude: %s",
              "DRY-RUN" if cfg.dry_run else "LIVE", cfg.x_enabled, cfg.tiktok_enabled, bool(cfg.anthropic_api_key))
-    result = run(cfg, force_video=args.force_video)
+    result = run(cfg, force_video=args.force_video, ignore_seen=args.ignore_seen)
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
