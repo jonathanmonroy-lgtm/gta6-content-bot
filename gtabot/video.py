@@ -251,7 +251,7 @@ def build_video(content: Content, handle: str, voice: str, workdir: Path,
     workdir.mkdir(parents=True, exist_ok=True)
     broll = Broll(pexels_key, workdir, gemini_key=gemini_key, use_pollinations=use_pollinations)
 
-    segments, backgrounds, audios = [], [], []
+    segments, backgrounds, audios, found = [], [], [], []
     for i, scene in enumerate(content.scenes):
         seg = narrate(scene.narration, voice, workdir / f"voice{i}.mp3", allow_silent)
         seconds = seg.duration + GAP
@@ -259,6 +259,10 @@ def build_video(content: Content, handle: str, voice: str, workdir: Path,
 
         bg = workdir / f"bg{i}.mp4"
         source, kind = broll.visual(scene.broll, seconds, f"clip{i}", seed=random.randint(1, 10**6))
+        if source:
+            found.append((source, kind))
+        elif found:  # reuse an earlier shot (with a different camera move) rather than drop to the gradient
+            source, kind = found[i % len(found)]
         background(source, kind, seconds, i, bg)
         backgrounds.append(bg)
 

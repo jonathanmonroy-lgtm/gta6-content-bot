@@ -103,12 +103,14 @@ class Broll:
             params = {"width": 1080, "height": 1920, "model": "flux", "nologo": "true", "seed": seed}
             for attempt in range(3):
                 try:
-                    resp = self.http.get(url, params=params, timeout=180)
+                    resp = self.http.get(url, params=params, timeout=90)
                     if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
                         path.write_bytes(resp.content)
                         log.info("image '%s' -> pollinations", query)
                         return path
                     log.warning("Pollinations %s for '%s'", resp.status_code, query)
+                    if resp.status_code == 402:  # anonymous quota used up; retrying will not help
+                        break
                 except requests.RequestException as exc:
                     log.warning("Pollinations failed for '%s': %s", query, exc)
                 time.sleep(8 * (attempt + 1))
