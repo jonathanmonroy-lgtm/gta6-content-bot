@@ -21,6 +21,12 @@ DEFAULT_FEEDS = [
 ]
 
 
+def _env(name: str, default: str | None = None) -> str | None:
+    """Like os.getenv, but an empty value (unset GitHub variable) counts as missing."""
+    value = os.getenv(name)
+    return value if value else default
+
+
 def _bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None or value == "":
@@ -36,10 +42,10 @@ def _int(name: str, default: int) -> int:
 @dataclass
 class Config:
     dry_run: bool = field(default_factory=lambda: _bool("DRY_RUN", True))
-    language: str = field(default_factory=lambda: os.getenv("BOT_LANGUAGE", "es"))
-    handle: str = field(default_factory=lambda: os.getenv("BOT_HANDLE", "@GTA6Radar"))
+    language: str = field(default_factory=lambda: _env("BOT_LANGUAGE", "es"))
+    handle: str = field(default_factory=lambda: _env("BOT_HANDLE", "@GTA6Radar"))
     feeds: list[str] = field(
-        default_factory=lambda: [f for f in os.getenv("FEEDS", "").split() if f] or DEFAULT_FEEDS
+        default_factory=lambda: [f for f in (_env("FEEDS") or "").split() if f] or DEFAULT_FEEDS
     )
 
     # Content cadence
@@ -48,35 +54,35 @@ class Config:
     evergreen_when_no_news: bool = field(default_factory=lambda: _bool("EVERGREEN_WHEN_NO_NEWS", True))
 
     # Claude
-    anthropic_api_key: str | None = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
-    model: str = field(default_factory=lambda: os.getenv("CLAUDE_MODEL", "claude-opus-5-5"))
+    anthropic_api_key: str | None = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
+    model: str = field(default_factory=lambda: _env("CLAUDE_MODEL", "claude-opus-5-5"))
 
     # Stock footage for video backgrounds (free key at pexels.com/api)
-    pexels_api_key: str | None = field(default_factory=lambda: os.getenv("PEXELS_API_KEY"))
+    pexels_api_key: str | None = field(default_factory=lambda: _env("PEXELS_API_KEY"))
 
     # Voice for TikTok narration (edge-tts voice name)
-    voice: str = field(default_factory=lambda: os.getenv("TTS_VOICE", "es-MX-JorgeNeural"))
+    voice: str = field(default_factory=lambda: _env("TTS_VOICE", "es-MX-JorgeNeural"))
 
     # X (OAuth 1.0a user context, app with Read and Write permission)
-    x_api_key: str | None = field(default_factory=lambda: os.getenv("X_API_KEY"))
-    x_api_secret: str | None = field(default_factory=lambda: os.getenv("X_API_SECRET"))
-    x_access_token: str | None = field(default_factory=lambda: os.getenv("X_ACCESS_TOKEN"))
-    x_access_secret: str | None = field(default_factory=lambda: os.getenv("X_ACCESS_TOKEN_SECRET"))
+    x_api_key: str | None = field(default_factory=lambda: _env("X_API_KEY"))
+    x_api_secret: str | None = field(default_factory=lambda: _env("X_API_SECRET"))
+    x_access_token: str | None = field(default_factory=lambda: _env("X_ACCESS_TOKEN"))
+    x_access_secret: str | None = field(default_factory=lambda: _env("X_ACCESS_TOKEN_SECRET"))
     x_attach_video: bool = field(default_factory=lambda: _bool("X_ATTACH_VIDEO", True))
 
     # TikTok Content Posting API
-    tiktok_client_key: str | None = field(default_factory=lambda: os.getenv("TIKTOK_CLIENT_KEY"))
-    tiktok_client_secret: str | None = field(default_factory=lambda: os.getenv("TIKTOK_CLIENT_SECRET"))
-    tiktok_refresh_token: str | None = field(default_factory=lambda: os.getenv("TIKTOK_REFRESH_TOKEN"))
+    tiktok_client_key: str | None = field(default_factory=lambda: _env("TIKTOK_CLIENT_KEY"))
+    tiktok_client_secret: str | None = field(default_factory=lambda: _env("TIKTOK_CLIENT_SECRET"))
+    tiktok_refresh_token: str | None = field(default_factory=lambda: _env("TIKTOK_REFRESH_TOKEN"))
     # Unaudited TikTok apps may only post SELF_ONLY; switch to PUBLIC_TO_EVERYONE after the audit.
-    tiktok_privacy: str = field(default_factory=lambda: os.getenv("TIKTOK_PRIVACY", "SELF_ONLY"))
+    tiktok_privacy: str = field(default_factory=lambda: _env("TIKTOK_PRIVACY", "SELF_ONLY"))
 
     # Lets the bot store the rotated TikTok refresh token back into the repo secrets.
-    github_token: str | None = field(default_factory=lambda: os.getenv("GH_SECRETS_TOKEN"))
-    github_repo: str | None = field(default_factory=lambda: os.getenv("GITHUB_REPOSITORY"))
+    github_token: str | None = field(default_factory=lambda: _env("GH_SECRETS_TOKEN"))
+    github_repo: str | None = field(default_factory=lambda: _env("GITHUB_REPOSITORY"))
 
-    state_path: Path = field(default_factory=lambda: Path(os.getenv("STATE_PATH", ROOT / "data" / "state.json")))
-    output_dir: Path = field(default_factory=lambda: Path(os.getenv("OUTPUT_DIR", ROOT / "output")))
+    state_path: Path = field(default_factory=lambda: Path(_env("STATE_PATH", ROOT / "data" / "state.json")))
+    output_dir: Path = field(default_factory=lambda: Path(_env("OUTPUT_DIR", ROOT / "output")))
 
     @property
     def x_enabled(self) -> bool:

@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 
@@ -28,6 +29,21 @@ def compose_tweet(content: Content) -> str:
     if content.source_url and len(text) + 1 + URL_LENGTH <= TWEET_LIMIT:
         text = f"{text}\n{content.source_url}"
     return text
+
+
+def render_sample(cfg: Config, path: str) -> dict:
+    """Render a hand-written script, to preview the video format without publishing."""
+    content = Content.model_validate_json(open(path, encoding="utf-8").read())
+    run_dir = cfg.output_dir / "sample"
+    video = build_video(content, cfg.handle, cfg.voice, run_dir, allow_silent=allow_silent(cfg),
+                        pexels_key=cfg.pexels_api_key)
+    (run_dir / "content.json").write_text(content.model_dump_json(indent=2), encoding="utf-8")
+    return {"status": "sample", "video": str(video)}
+
+
+def allow_silent(cfg: Config) -> bool:
+    # a silent video is fine for local dry runs, never on the real runner
+    return cfg.dry_run and not os.getenv("GITHUB_ACTIONS")
 
 
 def run(cfg: Config, *, force_video: bool = False, ignore_seen: bool = False) -> dict:
@@ -57,7 +73,7 @@ def run(cfg: Config, *, force_video: bool = False, ignore_seen: bool = False) ->
     video = None
     if want_video:
         video = build_video(content, cfg.handle, cfg.voice, run_dir,
-                            allow_silent=cfg.dry_run, pexels_key=cfg.pexels_api_key)
+                            allow_silent=allow_silent(cfg), pexels_key=cfg.pexels_api_key)
 
     tweet = compose_tweet(content)
     result = {"status": "ok", "topic": content.topic, "mode": content.mode, "dir": str(run_dir)}
@@ -91,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="publish (overrides DRY_RUN env)")
     parser.add_argument("--force-video", action="store_true")
     parser.add_argument("--ignore-seen", action="store_true", help="reuse news already covered (for tests)")
+    parser.add_argument("--sample", metavar="JSON", help="only render this script as a video, never publish")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -101,7 +118,10 @@ def main(argv: list[str] | None = None) -> int:
         cfg.dry_run = False
     log.info("Mode: %s | X: %s | TikTok: %s | Claude: %s",
              "DRY-RUN" if cfg.dry_run else "LIVE", cfg.x_enabled, cfg.tiktok_enabled, bool(cfg.anthropic_api_key))
-    result = run(cfg, force_video=args.force_video, ignore_seen=args.ignore_seen)
+    if args.sample:
+        result = render_sample(cfg, args.sample)
+    else:
+        result = run(cfg, force_video=args.force_video, ignore_seen=args.ignore_seen)
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

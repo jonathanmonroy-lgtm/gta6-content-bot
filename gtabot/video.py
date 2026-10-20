@@ -114,7 +114,8 @@ def _duration(path: Path) -> float:
     return float(out.stdout.strip())
 
 
-ENCODE = ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(FPS)]
+ENCODE = ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-maxrate", "8M", "-bufsize", "16M",
+          "-pix_fmt", "yuv420p", "-r", str(FPS)]
 
 
 def background(clip: Path | None, seconds: float, index: int, out: Path) -> None:
@@ -132,7 +133,7 @@ def background(clip: Path | None, seconds: float, index: int, out: Path) -> None
             f"gradients=s={W}x{H}:r={FPS}:n=4:c0=0x14062b:c1=0xff2d95:c2=0x00b8d4:c3=0x3a0ca3:"
             f"speed=0.02:seed={index * 7 + 3}:d={seconds:.3f}"
         )
-        _ffmpeg(["-f", "lavfi", "-i", src, "-vf", "noise=alls=10:allf=t,vignette=PI/4,setsar=1", *ENCODE, str(out)])
+        _ffmpeg(["-f", "lavfi", "-i", src, "-vf", "vignette=PI/4,setsar=1", *ENCODE, str(out)])
 
 
 def shade(path: Path) -> None:

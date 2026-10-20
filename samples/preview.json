@@ -1,0 +1,20 @@
+{
+  "publish": true,
+  "mode": "evergreen",
+  "source_item_id": null,
+  "topic": "detalles de Leonida",
+  "tweet": "Leonida no es solo Vice City: pantanos, cayos y pueblos enteros por explorar. ¿Qué zona vas a visitar primero? #GTA6",
+  "tiktok_caption": "Leonida es MUCHO más que Vice City 🌴 ¿Qué zona visitas primero? #GTA6 #GTAVI",
+  "label": "DATO",
+  "hook": "Leonida es más grande de lo que crees",
+  "title": "Leonida explicada",
+  "scenes": [
+    {"narration": "Si crees que GTA seis es solo Vice City, te estás perdiendo la mitad del mapa.", "broll": "miami skyline night"},
+    {"narration": "Leonida es la versión de Rockstar de Florida, y en los tráilers ya vimos mucho más que la ciudad.", "broll": "miami beach aerial"},
+    {"narration": "Hay cayos con playas y yates, inspirados en los Cayos de Florida.", "broll": "florida keys boat"},
+    {"narration": "Pantanos llenos de caimanes, al estilo de los Everglades.", "broll": "everglades swamp airboat"},
+    {"narration": "Y pueblos pequeños donde Lucia y Jason se mueven lejos de las luces de neón.", "broll": "small town florida road"},
+    {"narration": "¿Qué zona vas a explorar primero? Te leo en comentarios, y sígueme para más de GTA seis.", "broll": "sports car night city"}
+  ],
+  "source_url": null
+}
