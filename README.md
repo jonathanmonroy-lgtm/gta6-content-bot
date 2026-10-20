@@ -6,8 +6,10 @@ Bot autónomo que cada 3 horas:
 2. **Transforma** con Claude: elige la noticia más interesante y escribe contenido original
    (resumen con sus propias palabras, contexto, rumor vs. confirmado, pregunta a la audiencia).
    Si no hay noticias, crea contenido *evergreen* sobre información ya confirmada.
-3. **Crea** un video vertical 1080x1920 de 25-45 s con voz en off (edge-tts) y gráficos propios,
-   sin usar clips ni arte de Rockstar.
+3. **Crea** un short vertical 1080x1920 de 30-50 s: gancho grande en los primeros 3 s, etiqueta
+   NOTICIA/RUMOR/CONFIRMADO, subtítulos palabra por palabra sincronizados con la voz en off,
+   fondos en video de stock (Pexels) con movimiento, barra de progreso y cierre con pregunta.
+   Todo dentro de la zona segura de TikTok y sin usar clips ni arte de Rockstar.
 4. **Publica** el post en X (con el video adjunto) y el video en TikTok.
 
 Corre gratis en **GitHub Actions** (`.github/workflows/bot.yml`); no hay servidor que mantener.
@@ -33,6 +35,11 @@ Todo se configura en el repo: **Settings → Secrets and variables → Actions**
 ### 1. Claude (texto)
 - Crea una API key en https://console.anthropic.com → secret `ANTHROPIC_API_KEY`.
 - Sin key, el bot usa una plantilla básica (útil solo para pruebas).
+
+### 1b. Pexels (fondos en video, gratis)
+- Crea una cuenta en https://www.pexels.com/api/ y copia tu API key → secret `PEXELS_API_KEY`.
+- Sin key, el fondo es un degradado animado (sirve, pero se ve menos profesional).
+- Opcional: pon pistas de música libre de derechos (`.mp3`) en `assets/music/` y el bot las mezcla bajito.
 
 ### 2. X
 1. En https://developer.x.com crea un proyecto y una app (el plan gratis permite ~500 posts/mes).
@@ -73,7 +80,8 @@ con IA en TikTok. Eso también es lo que piden X y TikTok para monetizar.
 ```
 gtabot/sources.py      extracción (RSS)
 gtabot/writer.py       transformación con Claude (salida estructurada)
-gtabot/video.py        render del video (Pillow + ffmpeg + edge-tts)
+gtabot/video.py        render del video (ffmpeg + subtítulos ASS + edge-tts)
+gtabot/broll.py        fondos en video de Pexels (licencia libre)
 gtabot/publishers/     X (API v2) y TikTok (Content Posting API)
 gtabot/main.py         orquestación de una corrida
 ```

@@ -50,7 +50,7 @@ def test_state_roundtrip_and_counts(tmp_path):
 
 def test_compose_tweet_adds_link_only_when_it_fits():
     c = Content(publish=True, mode="news", source_item_id=None, topic="t", tweet="Hola #GTA6",
-                tiktok_caption="", title="", scenes=[], source_url="https://ex.com/a")
+                tiktok_caption="", label="NOTICIA", hook="", title="", scenes=[], source_url="https://ex.com/a")
     assert bot.compose_tweet(c).endswith("https://ex.com/a")
     c.tweet = "x" * 270
     assert bot.compose_tweet(c) == "x" * 270
@@ -63,7 +63,7 @@ def test_prompt_mentions_evergreen_when_no_items():
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg missing")
 def test_dry_run_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setattr(bot, "fetch_items", lambda feeds: parse_feed(RSS, "https://feed"))
-    monkeypatch.setattr("gtabot.video.narrate", lambda text, voice, path, allow_silent: _silent(path))
+    monkeypatch.setattr("gtabot.video.asyncio.run", _no_network)
     cfg = make_cfg(tmp_path, dry_run=True)
     result = bot.run(cfg)
     assert result["status"] == "ok" and result["video"]
@@ -73,11 +73,9 @@ def test_dry_run_end_to_end(tmp_path, monkeypatch):
     assert bot.run(cfg)["status"] == "skipped"
 
 
-def _silent(path):
-    from gtabot.video import _silence
-    out = path.with_suffix(".wav")
-    _silence(1.0, out)
-    return out
+def _no_network(coro):
+    coro.close()
+    raise OSError("offline")
 
 
 class FakeResp:

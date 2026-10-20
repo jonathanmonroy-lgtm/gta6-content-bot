@@ -56,7 +56,8 @@ def run(cfg: Config, *, force_video: bool = False) -> dict:
     want_video = bool(content.scenes) and (force_video or videos_today < cfg.max_videos_per_day)
     video = None
     if want_video:
-        video = build_video(content, cfg.handle, cfg.voice, run_dir, allow_silent=cfg.dry_run)
+        video = build_video(content, cfg.handle, cfg.voice, run_dir,
+                            allow_silent=cfg.dry_run, pexels_key=cfg.pexels_api_key)
 
     tweet = compose_tweet(content)
     result = {"status": "ok", "topic": content.topic, "mode": content.mode, "dir": str(run_dir)}

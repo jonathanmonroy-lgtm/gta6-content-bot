@@ -51,6 +51,9 @@ class Config:
     anthropic_api_key: str | None = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
     model: str = field(default_factory=lambda: os.getenv("CLAUDE_MODEL", "claude-opus-5-5"))
 
+    # Stock footage for video backgrounds (free key at pexels.com/api)
+    pexels_api_key: str | None = field(default_factory=lambda: os.getenv("PEXELS_API_KEY"))
+
     # Voice for TikTok narration (edge-tts voice name)
     voice: str = field(default_factory=lambda: os.getenv("TTS_VOICE", "es-MX-JorgeNeural"))
 

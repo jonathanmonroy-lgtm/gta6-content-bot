@@ -1,84 +1,109 @@
-"""Creation: render a vertical 1080x1920 narrated video from the script.
+"""Creation: render a vertical 1080x1920 short in a news-short format.
 
-Visuals are generated from scratch (gradient background + text), so no
-Rockstar footage or artwork is reused. Narration comes from edge-tts.
+Format ("radar"):
+  * 0-3 s   hook: big headline that pops in over moving footage, plus a NOTICIA/RUMOR badge
+  * body    word-by-word captions synced to the narration, one b-roll shot per scene,
+            persistent title at the top and a progress bar
+  * end     question + follow call to action
+Everything stays inside TikTok's safe zone (top 180 px and bottom 420 px are covered by the UI).
+Footage comes from Pexels stock (or an animated gradient fallback); nothing from Rockstar.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import random
+import re
 import shutil
 import subprocess
-import textwrap
+from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
+from .broll import Broll
+from .config import ROOT
 from .writer import Content
 
 log = logging.getLogger(__name__)
 
 W, H, FPS = 1080, 1920, 30
-PINK, TEAL, NIGHT = (255, 64, 160), (0, 214, 214), (18, 10, 40)
-FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-]
+FONTS_DIR = ROOT / "assets" / "fonts"
+MUSIC_DIR = ROOT / "assets" / "music"
+GAP = 0.12  # breath between scenes
+BADGE_COLORS = {  # ASS colours are &HBBGGRR
+    "NOTICIA": "&H00A02DFF", "CONFIRMADO": "&H0060C000", "RUMOR": "&H0000A5FF",
+    "FILTRACIÓN": "&H003030E0", "DATO": "&H00D1C200", "TEORÍA": "&H00F03A8A",
+}
+YELLOW, WHITE = "&H004DE1FF", "&H00FFFFFF"
 
 
-def _font(size: int) -> ImageFont.FreeTypeFont:
-    for path in FONT_CANDIDATES:
-        if Path(path).exists():
-            return ImageFont.truetype(path, size)
-    return ImageFont.load_default(size)
+@dataclass
+class Word:
+    start: float
+    end: float
+    text: str
 
 
-def _background() -> Image.Image:
-    img = Image.new("RGB", (W, H), NIGHT)
-    draw = ImageDraw.Draw(img)
-    for y in range(H):
-        t = y / H
-        # night sky fading into a pink/teal Vice City sunset
-        r = int(NIGHT[0] + (PINK[0] - NIGHT[0]) * t**1.6)
-        g = int(NIGHT[1] + (TEAL[1] * 0.35 - NIGHT[1]) * t**2)
-        b = int(NIGHT[2] + (PINK[2] - NIGHT[2]) * t**1.2)
-        draw.line([(0, y), (W, y)], fill=(r, g, b))
-    for i, y in enumerate(range(int(H * 0.72), H, 46)):
-        draw.line([(0, y), (W, y)], fill=TEAL, width=2 + i // 3)
-    return img
+@dataclass
+class Segment:
+    audio: Path
+    duration: float
+    words: list[Word]
 
 
-def _centered(draw: ImageDraw.ImageDraw, lines: list[str], font, y: int, fill, gap: int = 18) -> int:
-    for line in lines:
-        box = draw.textbbox((0, 0), line, font=font, stroke_width=4)
-        x = (W - (box[2] - box[0])) // 2
-        draw.text((x, y), line, font=font, fill=fill, stroke_width=4, stroke_fill=(0, 0, 0))
-        y += box[3] - box[1] + gap
-    return y
+# Narration -----------------------------------------------------------------
 
-
-def render_frame(title: str, text: str, handle: str, index: int, total: int, path: Path) -> None:
-    img = _background()
-    draw = ImageDraw.Draw(img)
-    _centered(draw, ["GTA VI · NOTICIAS"], _font(54), 150, TEAL)
-    _centered(draw, textwrap.wrap(title.upper(), 18), _font(64), 250, (255, 255, 255))
-
-    body_font = _font(92)
-    lines = textwrap.wrap(text, 16)
-    line_h = draw.textbbox((0, 0), "Ag", font=body_font)[3] + 22
-    _centered(draw, lines, body_font, (H - line_h * len(lines)) // 2, (255, 255, 255), gap=22)
-
-    bar_w = int(W * 0.8 * (index + 1) / total)
-    draw.rounded_rectangle([W * 0.1, H - 260, W * 0.1 + bar_w, H - 245], 8, fill=PINK)
-    _centered(draw, [handle, "Cuenta de fans · no oficial"], _font(42), H - 220, (255, 255, 255))
-    img.save(path)
-
-
-async def _tts(text: str, voice: str, path: Path) -> None:
+async def _tts(text: str, voice: str, path: Path) -> list[Word]:
     import edge_tts
 
-    await edge_tts.Communicate(text, voice, rate="+8%").save(str(path))
+    words = []
+    comm = edge_tts.Communicate(text, voice, rate="+12%", boundary="WordBoundary")
+    with path.open("wb") as fh:
+        async for chunk in comm.stream():
+            if chunk["type"] == "audio":
+                fh.write(chunk["data"])
+            elif chunk["type"] == "WordBoundary":
+                start = chunk["offset"] / 1e7
+                words.append(Word(start, start + chunk["duration"] / 1e7, chunk["text"]))
+    return words
+
+
+def _even_words(text: str, duration: float) -> list[Word]:
+    tokens = text.split()
+    step = duration / max(1, len(tokens))
+    return [Word(i * step, (i + 1) * step, t) for i, t in enumerate(tokens)]
+
+
+def _attach_punctuation(words: list[Word], text: str) -> list[Word]:
+    """edge-tts drops punctuation; put it back so captions read naturally."""
+    tokens = text.split()
+    if len(tokens) != len(words):
+        return words
+    return [Word(w.start, w.end, tok) for w, tok in zip(words, tokens)]
+
+
+def narrate(text: str, voice: str, path: Path, allow_silent: bool) -> Segment:
+    try:
+        words = asyncio.run(_tts(text, voice, path))
+        duration = _duration(path)
+        return Segment(path, duration, _attach_punctuation(words, text) or _even_words(text, duration))
+    except Exception as exc:  # network or service failure
+        if not allow_silent:
+            raise
+        log.warning("TTS unavailable (%s); using a silent track for the dry run", exc)
+        silent = path.with_suffix(".wav")
+        duration = max(2.0, len(text.split()) / 2.8)
+        _ffmpeg(["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", f"{duration:.2f}", str(silent)])
+        return Segment(silent, duration, _even_words(text, duration))
+
+
+# ffmpeg helpers ------------------------------------------------------------
+
+def _ffmpeg(args: list[str]) -> None:
+    proc = subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *args], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {proc.stderr[-1500:]}")
 
 
 def _duration(path: Path) -> float:
@@ -89,52 +114,174 @@ def _duration(path: Path) -> float:
     return float(out.stdout.strip())
 
 
-def _silence(seconds: float, path: Path) -> None:
-    _ffmpeg(["-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", f"{seconds:.2f}", str(path)])
+ENCODE = ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(FPS)]
 
 
-def _ffmpeg(args: list[str]) -> None:
-    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *args], check=True)
+def background(clip: Path | None, seconds: float, index: int, out: Path) -> None:
+    if clip:
+        direction = "(iw-ow)*t/{d}" if index % 2 == 0 else "(iw-ow)*(1-t/{d})"
+        vf = (
+            f"scale={int(W * 1.12)}:{int(H * 1.12)}:force_original_aspect_ratio=increase,"
+            f"crop={int(W * 1.12)}:{int(H * 1.12)},"
+            f"crop={W}:{H}:x='{direction.format(d=seconds)}':y='(ih-oh)/2',"
+            "eq=saturation=1.18:contrast=1.06,fps=30,setsar=1"
+        )
+        _ffmpeg(["-stream_loop", "-1", "-i", str(clip), "-t", f"{seconds:.3f}", "-vf", vf, "-an", *ENCODE, str(out)])
+    else:
+        src = (
+            f"gradients=s={W}x{H}:r={FPS}:n=4:c0=0x14062b:c1=0xff2d95:c2=0x00b8d4:c3=0x3a0ca3:"
+            f"speed=0.02:seed={index * 7 + 3}:d={seconds:.3f}"
+        )
+        _ffmpeg(["-f", "lavfi", "-i", src, "-vf", "noise=alls=10:allf=t,vignette=PI/4,setsar=1", *ENCODE, str(out)])
 
 
-def narrate(text: str, voice: str, path: Path, allow_silent: bool) -> Path:
-    try:
-        asyncio.run(_tts(text, voice, path))
-        return path
-    except Exception as exc:  # network or service failure
-        if not allow_silent:
-            raise
-        log.warning("TTS unavailable (%s); using silent track for the dry run", exc)
-        silent = path.with_suffix(".wav")
-        _silence(max(2.0, len(text.split()) / 2.6), silent)
-        return silent
+def shade(path: Path) -> None:
+    """Dark gradients top and bottom so white text always reads over bright footage."""
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    for y in range(H):
+        top = max(0.0, 1 - y / 760) * 150
+        bottom = max(0.0, (y - 950) / (H - 950)) * 190
+        draw.line([(0, y), (W, y)], fill=(8, 4, 20, int(35 + top + bottom)))
+    img.save(path)
 
 
-def build_video(content: Content, handle: str, voice: str, workdir: Path, allow_silent: bool = False) -> Path:
+# Captions (ASS) --------------------------------------------------------------
+
+def _ts(seconds: float) -> str:
+    cs = max(0, int(round(seconds * 100)))
+    return f"{cs // 360000}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
+
+
+def _esc(text: str) -> str:
+    return text.replace("\\", "").replace("{", "(").replace("}", ")").upper()
+
+
+def _chunks(words: list[Word], size: int = 3) -> list[list[Word]]:
+    chunks, current = [], []
+    for w in words:
+        current.append(w)
+        if len(current) == size or re.search(r"[.,!?;:]$", w.text):
+            chunks.append(current)
+            current = []
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+ASS_HEADER = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {W}
+PlayResY: {H}
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Caption,Anton,124,{WHITE},{WHITE},&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,7,4,5,90,90,0,1
+Style: Hook,Anton,138,{WHITE},{WHITE},&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,9,6,5,70,70,0,1
+Style: Title,Anton,80,{WHITE},{WHITE},&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,5,3,8,80,80,0,1
+Style: Badge,Anton,62,{WHITE},{WHITE},&H00A02DFF,&H00000000,0,0,0,0,100,100,3,0,3,16,0,8,0,0,0,1
+Style: Brand,Anton,46,&H33FFFFFF,{WHITE},&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,3,0,8,0,0,0,1
+Style: CTA,Anton,84,{YELLOW},{WHITE},&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,7,4,5,80,80,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+
+def build_ass(content: Content, segments: list[Segment], handle: str) -> str:
+    total = sum(s.duration + GAP for s in segments)
+    hook_end = min(3.0, segments[0].duration + GAP)
+    badge = BADGE_COLORS.get(content.label, BADGE_COLORS["NOTICIA"])
+    events = [
+        # brand + badge for the whole video
+        f"Dialogue: 2,{_ts(0)},{_ts(total)},Brand,,0,0,0,,{{\\pos(540,205)}}GTA VI RADAR · FAN NO OFICIAL",
+        f"Dialogue: 2,{_ts(0)},{_ts(total)},Badge,,0,0,0,,{{\\pos(540,290)\\3c{badge}"
+        f"\\fscx60\\fscy60\\t(0,220,\\fscx100\\fscy100)}} {_esc(content.label)} ",
+        # hook pops in big, then the title stays small at the top
+        f"Dialogue: 3,{_ts(0)},{_ts(hook_end)},Hook,,0,0,0,,{{\\pos(540,720)\\fscx55\\fscy55"
+        f"\\t(0,180,\\fscx108\\fscy108)\\t(180,300,\\fscx100\\fscy100)\\fad(0,200)}}{_esc(content.hook)}",
+        f"Dialogue: 2,{_ts(hook_end)},{_ts(total)},Title,,0,0,0,,{{\\pos(540,400)\\fad(250,0)}}{_esc(content.title)}",
+        f"Dialogue: 2,{_ts(total - 2.6)},{_ts(total)},CTA,,0,0,0,,{{\\pos(540,1420)\\fad(200,0)"
+        f"\\fscx70\\fscy70\\t(0,200,\\fscx100\\fscy100)}}SÍGUEME {_esc(handle)}",
+    ]
+    offset = 0.0
+    for seg in segments:
+        for chunk in _chunks(seg.words):
+            for i, word in enumerate(chunk):
+                start = offset + word.start
+                end = offset + (chunk[i + 1].start if i + 1 < len(chunk) else min(word.end + 0.25, seg.duration + GAP))
+                parts = []
+                for j, w in enumerate(chunk):
+                    if j == i:
+                        parts.append(f"{{\\c{YELLOW}\\fscx112\\fscy112}}{_esc(w.text)}{{\\c{WHITE}\\fscx100\\fscy100}}")
+                    else:
+                        parts.append(_esc(w.text))
+                pop = "\\fscx85\\fscy85\\t(0,90,\\fscx100\\fscy100)" if i == 0 else ""
+                events.append(
+                    f"Dialogue: 1,{_ts(start)},{_ts(end)},Caption,,0,0,0,,{{\\pos(540,1130){pop}}}{' '.join(parts)}"
+                )
+        offset += seg.duration + GAP
+    return ASS_HEADER + "\n".join(events) + "\n"
+
+
+# Assembly ------------------------------------------------------------------
+
+def build_video(content: Content, handle: str, voice: str, workdir: Path,
+                allow_silent: bool = False, pexels_key: str | None = None) -> Path:
     if not shutil.which("ffmpeg"):
         raise RuntimeError("ffmpeg is required to render videos")
     workdir.mkdir(parents=True, exist_ok=True)
-    segments = []
-    total = len(content.scenes)
-    for i, scene in enumerate(content.scenes):
-        frame = workdir / f"scene{i}.png"
-        render_frame(content.title, scene.on_screen, handle, i, total, frame)
-        audio = narrate(scene.narration, voice, workdir / f"scene{i}.mp3", allow_silent)
-        seconds = _duration(audio) + 0.35
-        frames = int(seconds * FPS)
-        segment = workdir / f"scene{i}.mp4"
-        zoom = f"zoompan=z='min(zoom+0.0007,1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps={FPS}"
-        _ffmpeg([
-            "-loop", "1", "-framerate", str(FPS), "-i", str(frame), "-i", str(audio),
-            "-vf", f"{zoom},format=yuv420p", "-af", "apad", "-t", f"{seconds:.2f}",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-            "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2", str(segment),
-        ])
-        segments.append(segment)
+    broll = Broll(pexels_key, workdir)
 
-    listing = workdir / "segments.txt"
-    listing.write_text("".join(f"file '{s.name}'\n" for s in segments), encoding="utf-8")
+    segments, backgrounds, audios = [], [], []
+    for i, scene in enumerate(content.scenes):
+        seg = narrate(scene.narration, voice, workdir / f"voice{i}.mp3", allow_silent)
+        seconds = seg.duration + GAP
+        segments.append(seg)
+
+        bg = workdir / f"bg{i}.mp4"
+        background(broll.clip(scene.broll, seconds, f"clip{i}"), seconds, i, bg)
+        backgrounds.append(bg)
+
+        wav = workdir / f"voice{i}.wav" if seg.audio.suffix != ".wav" else seg.audio.with_name(f"pad{i}.wav")
+        _ffmpeg(["-i", str(seg.audio), "-af", "apad", "-t", f"{seconds:.3f}", "-ar", "44100", "-ac", "2", str(wav)])
+        audios.append(wav)
+
+    for name, files in (("bg.txt", backgrounds), ("voice.txt", audios)):
+        (workdir / name).write_text("".join(f"file '{f.name}'\n" for f in files), encoding="utf-8")
+    _ffmpeg(["-f", "concat", "-safe", "0", "-i", str(workdir / "bg.txt"), "-c", "copy", str(workdir / "bg.mp4")])
+    _ffmpeg(["-f", "concat", "-safe", "0", "-i", str(workdir / "voice.txt"), "-c", "copy", str(workdir / "voice.wav")])
+
+    total = sum(s.duration + GAP for s in segments)
+    ass = workdir / "captions.ass"
+    ass.write_text(build_ass(content, segments, handle), encoding="utf-8")
+    shade(workdir / "shade.png")
+
+    inputs = ["-i", str(workdir / "bg.mp4"), "-i", str(workdir / "shade.png"), "-i", str(workdir / "voice.wav"),
+              "-f", "lavfi", "-i", f"color=c=0xff2d95:s={W}x10:r={FPS}:d={total:.3f}"]
+    audio = "[2:a]loudnorm=I=-14:TP=-1.5:LRA=11[aout]"
+    music = sorted(MUSIC_DIR.glob("*.mp3")) if MUSIC_DIR.exists() else []
+    if music:
+        inputs += ["-stream_loop", "-1", "-i", str(random.choice(music))]
+        audio = ("[4:a]volume=0.10,afade=t=out:st={0:.2f}:d=1.5[m];[2:a][m]amix=inputs=2:duration=first:normalize=0,"
+                 "loudnorm=I=-14:TP=-1.5:LRA=11[aout]").format(max(0.0, total - 1.5))
+
+    fonts = str(FONTS_DIR).replace(":", "\\:")
+    video = (
+        f"[0:v][1:v]overlay=0:0[v1];"
+        f"[v1][3:v]overlay=x='(t/{total:.3f}-1)*w':y=0:eval=frame[v2];"
+        f"[v2]ass={ass.name}:fontsdir={fonts},format=yuv420p[vout]"
+    )
     final = workdir / "video.mp4"
-    _ffmpeg(["-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", "-movflags", "+faststart", str(final)])
+    proc = subprocess.run(
+        ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
+         "-filter_complex", f"{video};{audio}", "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.3f}",
+         *ENCODE, "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-movflags", "+faststart", final.name],
+        cwd=workdir, capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {proc.stderr[-1500:]}")
     log.info("Video rendered: %s (%.1fs)", final, _duration(final))
     return final

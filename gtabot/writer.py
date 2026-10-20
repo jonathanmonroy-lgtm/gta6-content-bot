@@ -14,8 +14,9 @@ log = logging.getLogger(__name__)
 
 
 class Scene(BaseModel):
-    on_screen: str = Field(description="Texto corto en pantalla, máximo 9 palabras")
-    narration: str = Field(description="Lo que dice la voz en off en esta escena, 1-2 frases")
+    narration: str = Field(description="Lo que dice la voz en off en esta escena, 1-2 frases cortas")
+    broll: str = Field(description="búsqueda EN INGLÉS de video de stock para el fondo, 2-4 palabras, "
+                       "estilo Miami/Florida/neón/autos/playa/ciudad de noche; nunca nombres de juegos o marcas")
 
 
 class Content(BaseModel):
@@ -25,8 +26,12 @@ class Content(BaseModel):
     topic: str = Field(description="tema en 3-6 palabras, para no repetirlo")
     tweet: str = Field(description="post para X, máximo 260 caracteres incluyendo hashtags")
     tiktok_caption: str = Field(description="descripción para TikTok, máximo 150 caracteres con hashtags")
-    title: str = Field(description="titular del video, máximo 7 palabras")
-    scenes: list[Scene] = Field(description="4 a 7 escenas, 25-45 segundos de narración en total")
+    label: Literal["NOTICIA", "RUMOR", "CONFIRMADO", "FILTRACIÓN", "DATO", "TEORÍA"] = Field(
+        description="etiqueta honesta del tipo de contenido")
+    hook: str = Field(description="gancho en pantalla de los primeros 3 segundos, 3-7 palabras, impactante y veraz")
+    title: str = Field(description="titular corto que queda arriba durante el video, máximo 6 palabras")
+    scenes: list[Scene] = Field(description="5 a 8 escenas, 30-50 segundos de narración en total; "
+                                "la primera escena dice el gancho en voz, la última invita a comentar y seguir")
     source_url: str | None = None
 
 
@@ -41,8 +46,10 @@ Reglas:
 - No inventes datos, fechas, precios ni citas. Si algo no está en las fuentes, no lo afirmes.
 - La cuenta es de fans y no oficial; no te hagas pasar por Rockstar.
 - Tono: cercano, enérgico, sin clickbait engañoso. Máximo 2-3 hashtags relevantes (#GTA6 primero).
-- El gancho va en la primera escena: los primeros 2 segundos deciden si la gente se queda.
-- Cierra el video con una pregunta o llamada a seguir la cuenta {handle}.
+- Video: el gancho va en la primera escena; los primeros 2 segundos deciden si la gente se queda.
+  Frases cortas y habladas, ritmo rápido, una idea por escena, sin relleno ni saludos.
+  Escribe "GTA seis" en la narración (no "GTA VI") para que la voz lo pronuncie bien.
+- Cierra el video con una pregunta concreta y una invitación a seguir {handle}.
 - No repitas temas recientes: {recent}.
 
 Si no hay noticias nuevas útiles y se permite modo evergreen, crea contenido evergreen basado SOLO en
@@ -97,7 +104,7 @@ def offline_content(items: list[Item], cfg: Config) -> Content:
     if not items:
         return Content(
             publish=False, mode="evergreen", source_item_id=None, topic="sin novedades",
-            tweet="", tiktok_caption="", title="", scenes=[],
+            tweet="", tiktok_caption="", label="DATO", hook="", title="", scenes=[],
         )
     item = items[0]
     return Content(
@@ -107,11 +114,13 @@ def offline_content(items: list[Item], cfg: Config) -> Content:
         topic=item.title[:40],
         tweet=f"Novedad de GTA VI: {item.title[:180]} ¿Qué opinas? #GTA6",
         tiktok_caption=f"{item.title[:110]} #GTA6 #GTAVI",
+        label="NOTICIA",
+        hook="Lo nuevo de GTA VI",
         title="Lo nuevo de GTA VI",
         scenes=[
-            Scene(on_screen="Novedad de GTA VI", narration="Esto es lo último que se sabe de GTA seis."),
-            Scene(on_screen=item.title[:60], narration=item.title),
-            Scene(on_screen="¿Qué opinas?", narration=f"Cuéntame en comentarios y sigue a {cfg.handle} para más."),
+            Scene(narration="Esto es lo último que se sabe de GTA seis.", broll="miami night neon"),
+            Scene(narration=item.title, broll="miami beach aerial"),
+            Scene(narration="¿Tú qué opinas? Te leo en comentarios.", broll="sports car night city"),
         ],
         source_url=item.url,
     )
