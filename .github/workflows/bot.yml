@@ -66,15 +66,14 @@ jobs:
 
       - name: Publish preview to the previews branch
         if: inputs.ignore_seen
+        env:
+          TOKEN: ${{ github.token }}
         run: |
           mkdir -p /tmp/preview && cp output/*/video.mp4 output/*/content.json /tmp/preview/
-          git fetch origin previews || true
-          git switch --orphan previews-tmp
-          git rm -rfq --cached . >/dev/null 2>&1 || true
-          cp /tmp/preview/* . && git add video.mp4 content.json
-          git -c user.name=gta6-bot -c user.email=gta6-bot@users.noreply.github.com commit -qm "preview ${{ github.run_id }}"
-          git push -f origin previews-tmp:previews
-          git switch -f main
+          cd /tmp/preview
+          git init -q -b previews
+          git add . && git -c user.name=gta6-bot -c user.email=gta6-bot@users.noreply.github.com commit -qm "preview ${{ github.run_id }}"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git" previews
 
       - name: Save state
         if: always() && !inputs.ignore_seen
