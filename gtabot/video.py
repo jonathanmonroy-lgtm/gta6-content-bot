@@ -283,5 +283,8 @@ def build_video(content: Content, handle: str, voice: str, workdir: Path,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {proc.stderr[-1500:]}")
+    for f in workdir.iterdir():  # keep only the final video, the captions and the json files
+        if f.suffix in {".wav", ".mp3", ".png", ".txt"} or (f.suffix == ".mp4" and f != final):
+            f.unlink()
     log.info("Video rendered: %s (%.1fs)", final, _duration(final))
     return final
