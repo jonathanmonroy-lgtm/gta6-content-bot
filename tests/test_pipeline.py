@@ -143,3 +143,19 @@ def test_tiktok_post_flow(tmp_path):
     assert init["source_info"]["total_chunk_count"] == 1
     put = next(c for c in s.calls if c[0] == "PUT")[2]
     assert put["headers"]["Content-Range"] == "bytes 0-999/1000"
+
+
+def test_captions_never_overlap():
+    from gtabot.video import Segment, Word, build_ass
+    words = [Word(0.0, 0.6, "Hola,"), Word(0.5, 1.0, "esto"), Word(0.9, 1.4, "es"), Word(1.3, 2.0, "GTA")]
+    content = Content(publish=True, mode="news", source_item_id=None, topic="t", tweet="", tiktok_caption="",
+                      label="DATO", hook="h", title="t", scenes=[Scene(narration="x", broll="y")])
+    ass = build_ass(content, [Segment(Path("a.wav"), 2.0, words)], "@x")
+    captions = [line.split(",")[1:3] for line in ass.splitlines() if ",Caption," in line]
+
+    def secs(ts):
+        h, m, s = ts.split(":")
+        return int(h) * 3600 + int(m) * 60 + float(s)
+
+    spans = [(secs(a), secs(b)) for a, b in captions]
+    assert all(prev[1] <= cur[0] for prev, cur in zip(spans, spans[1:]))

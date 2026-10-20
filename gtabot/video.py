@@ -209,10 +209,13 @@ def build_ass(content: Content, segments: list[Segment], handle: str) -> str:
     ]
     offset = 0.0
     for seg in segments:
+        starts = [w.start for w in seg.words[1:]] + [seg.duration + GAP]
+        next_start = {id(w): nxt for w, nxt in zip(seg.words, starts)}
         for chunk in _chunks(seg.words):
             for i, word in enumerate(chunk):
                 start = offset + word.start
-                end = offset + (chunk[i + 1].start if i + 1 < len(chunk) else min(word.end + 0.25, seg.duration + GAP))
+                hold = word.end + 0.25 if i + 1 == len(chunk) else next_start[id(word)]
+                end = offset + min(hold, next_start[id(word)])  # never overlap the next caption
                 parts = []
                 for j, w in enumerate(chunk):
                     if j == i:
