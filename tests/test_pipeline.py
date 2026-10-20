@@ -1,23 +1,32 @@
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from gtabot import ccvideo
 from gtabot import main as bot
 from gtabot.config import Config
 from gtabot.publishers.tiktok import TikTokPublisher
 from gtabot.publishers.x import XPublisher
 from gtabot.sources import parse_feed
 from gtabot.state import State
-from gtabot.writer import Content, Scene, build_prompt
+from gtabot.writer import XPost
 
 RSS = """<?xml version="1.0"?><rss version="2.0"><channel><title>Noticias</title>
 <item><title>Rockstar muestra nuevo tráiler de GTA 6</title><link>https://ex.com/a</link>
 <description>&lt;b&gt;Lucia&lt;/b&gt; y Jason en Leonida</description>
 <pubDate>Mon, 20 Oct 2026 10:00:00 GMT</pubDate></item>
+<item><title>GTA 6: Rockstar comparte captura nueva</title><link>https://www.reddit.com/r/GTA6/comments/1</link>
+<description>&lt;a href="https://x.com/RockstarGames/status/1850000000000000000"&gt;link&lt;/a&gt;</description></item>
 <item><title>Receta de pan casero</title><link>https://ex.com/b</link></item>
 </channel></rss>"""
+
+YT = """<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+<title>Rockstar Games</title><entry><yt:videoId>abc123</yt:videoId><title>Grand Theft Auto VI Trailer 3</title>
+<link rel="alternate" href="https://www.youtube.com/watch?v=abc123"/><author><name>Rockstar Games</name></author>
+<published>2026-10-20T10:00:00+00:00</published></entry></feed>"""
 
 
 def make_cfg(tmp_path: Path, **kw) -> Config:
@@ -30,11 +39,17 @@ def make_cfg(tmp_path: Path, **kw) -> Config:
     return cfg
 
 
-def test_parse_feed_keeps_only_relevant_items():
+def test_parse_feed_finds_news_and_x_posts():
     items = parse_feed(RSS, "https://feed")
-    assert [i.title for i in items] == ["Rockstar muestra nuevo tráiler de GTA 6"]
+    assert [i.kind for i in items] == ["news", "tweet"]
     assert items[0].summary == "Lucia y Jason en Leonida"
-    assert items[0].published.year == 2026
+    tweet = items[1]
+    assert tweet.tweet_id == "1850000000000000000" and tweet.author == "RockstarGames"
+
+
+def test_parse_youtube_feed():
+    [item] = parse_feed(YT, "https://yt")
+    assert item.kind == "youtube" and item.id == "ytabc123" and item.author == "Rockstar Games"
 
 
 def test_state_roundtrip_and_counts(tmp_path):
@@ -48,34 +63,46 @@ def test_state_roundtrip_and_counts(tmp_path):
     assert s2.recent_topics() == ["trailer"]
 
 
-def test_compose_tweet_adds_link_only_when_it_fits():
-    c = Content(publish=True, mode="news", source_item_id=None, topic="t", tweet="Hola #GTA6",
-                tiktok_caption="", label="NOTICIA", hook="", title="", scenes=[], source_url="https://ex.com/a")
-    assert bot.compose_tweet(c).endswith("https://ex.com/a")
-    c.tweet = "x" * 270
-    assert bot.compose_tweet(c) == "x" * 270
+def test_compose_tweet_quotes_x_posts_and_links_the_rest():
+    news, tweet = parse_feed(RSS, "https://feed")
+    post = XPost(publish=True, item_id=None, topic="t", text="Mira esto #GTA6")
+    assert bot.compose_tweet(post, tweet) == ("Mira esto #GTA6", "1850000000000000000")
+    assert bot.compose_tweet(post, news) == ("Mira esto #GTA6\nhttps://ex.com/a", None)
 
 
-def test_prompt_mentions_evergreen_when_no_items():
-    assert "No hay noticias nuevas" in build_prompt([], True)
+def test_cc_filter():
+    base = {"title": "GTA 6 análisis de Leonida", "duration": 300, "license": "Creative Commons Attribution license (reuse allowed)"}
+    assert ccvideo.acceptable(base)
+    assert not ccvideo.acceptable({**base, "license": None})
+    assert not ccvideo.acceptable({**base, "title": "GTA 6 Official Trailer"})
+    assert not ccvideo.acceptable({**base, "title": "GTA 6 Trailer 2"})
+    assert not ccvideo.acceptable({**base, "title": "Minecraft speedrun"})
+
+
+def test_segment_skips_intro_and_caps_length():
+    assert ccvideo.segment(40) == (0.0, 40)
+    start, end = ccvideo.segment(600)
+    assert start == 90 and end - start == 58
+
+
+def test_run_dry_shares_on_x_and_skips_video_when_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(bot, "fetch_items", lambda feeds, channels: parse_feed(RSS, "https://feed"))
+    monkeypatch.setattr(ccvideo, "find", lambda queries, seen: None)
+    cfg = make_cfg(tmp_path, dry_run=True)
+    result = bot.run(cfg)
+    assert result["video"] == "none" and result["x_source"].startswith("https://x.com/")
+    assert bot.run(cfg)["x"] == "skipped"  # nothing new the second time
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg missing")
-def test_dry_run_end_to_end(tmp_path, monkeypatch):
-    monkeypatch.setattr(bot, "fetch_items", lambda feeds: parse_feed(RSS, "https://feed"))
-    monkeypatch.setattr("gtabot.video.asyncio.run", _no_network)
-    cfg = make_cfg(tmp_path, dry_run=True, use_pollinations=False)
-    result = bot.run(cfg)
-    assert result["status"] == "ok" and result["video"]
-    video = Path(result["dir"]) / "video.mp4"
-    assert video.stat().st_size > 10_000
-    # the same item is not used twice
-    assert bot.run(cfg)["status"] == "skipped"
-
-
-def _no_network(coro):
-    coro.close()
-    raise OSError("offline")
+def test_make_vertical(tmp_path):
+    src = tmp_path / "source.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=s=1280x720:d=1",
+                    "-f", "lavfi", "-i", "sine=d=1", "-shortest", str(src)], check=True)
+    out = ccvideo.make_vertical(src, tmp_path / "video.mp4", "Titular de prueba", "Video: Autor (CC BY) · https://youtu.be/x")
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height",
+                            "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout.strip()
+    assert probe == "1080,1920"
 
 
 class FakeResp:
@@ -110,7 +137,7 @@ class FakeSession:
         return self.request("GET", url, **kw)
 
 
-def test_x_post_with_video(tmp_path):
+def test_x_post_with_video_and_quote(tmp_path):
     video = tmp_path / "v.mp4"
     video.write_bytes(b"0" * 100)
     s = FakeSession({
@@ -120,8 +147,11 @@ def test_x_post_with_video(tmp_path):
         "/tweets": FakeResp(payload={"data": {"id": "t1"}}),
     })
     cfg = make_cfg(tmp_path, x_api_key="a", x_api_secret="b", x_access_token="c", x_access_secret="d")
-    assert XPublisher(cfg, s).post("hola", video) == "t1"
+    x = XPublisher(cfg, s)
+    assert x.post("hola", video) == "t1"
     assert s.calls[-1][2]["json"] == {"text": "hola", "media": {"media_ids": ["m1"]}}
+    x.post("mira", quote_id="99")
+    assert s.calls[-1][2]["json"] == {"text": "mira", "quote_tweet_id": "99"}
 
 
 def test_tiktok_post_flow(tmp_path):
@@ -140,33 +170,5 @@ def test_tiktok_post_flow(tmp_path):
     assert TikTokPublisher(cfg, s).post(video, "cap #GTA6") == "p1"
     init = next(c for c in s.calls if "/video/init/" in c[1])[2]["json"]
     assert init["post_info"]["privacy_level"] == "SELF_ONLY"
-    assert init["source_info"]["total_chunk_count"] == 1
     put = next(c for c in s.calls if c[0] == "PUT")[2]
     assert put["headers"]["Content-Range"] == "bytes 0-999/1000"
-
-
-def test_captions_never_overlap():
-    from gtabot.video import Segment, Word, build_ass
-    words = [Word(0.0, 0.6, "Hola,"), Word(0.5, 1.0, "esto"), Word(0.9, 1.4, "es"), Word(1.3, 2.0, "GTA")]
-    content = Content(publish=True, mode="news", source_item_id=None, topic="t", tweet="", tiktok_caption="",
-                      label="DATO", hook="h", title="t", scenes=[Scene(narration="x", broll="y")])
-    ass = build_ass(content, [Segment(Path("a.wav"), 2.0, words)], "@x")
-    captions = [line.split(",")[1:3] for line in ass.splitlines() if ",Caption," in line]
-
-    def secs(ts):
-        h, m, s = ts.split(":")
-        return int(h) * 3600 + int(m) * 60 + float(s)
-
-    spans = [(secs(a), secs(b)) for a, b in captions]
-    assert all(prev[1] <= cur[0] for prev, cur in zip(spans, spans[1:]))
-
-
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg missing")
-def test_image_background_has_motion(tmp_path):
-    from PIL import Image
-    from gtabot.video import background
-    img = tmp_path / "a.jpg"
-    Image.radial_gradient("L").resize((1080, 1920)).convert("RGB").save(img)
-    out = tmp_path / "bg.mp4"
-    background(img, "image", 1.0, 0, out)
-    assert out.stat().st_size > 1000

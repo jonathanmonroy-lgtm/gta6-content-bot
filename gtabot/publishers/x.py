@@ -52,8 +52,10 @@ class XPublisher:
             raise RuntimeError(f"X video processing failed: {info}")
         return media_id
 
-    def post(self, text: str, video: Path | None = None) -> str:
+    def post(self, text: str, video: Path | None = None, quote_id: str | None = None) -> str:
         body: dict = {"text": text}
+        if quote_id:
+            body["quote_tweet_id"] = quote_id
         if video:
             try:
                 body["media"] = {"media_ids": [self.upload_video(video)]}

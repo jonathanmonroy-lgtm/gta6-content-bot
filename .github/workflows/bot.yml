@@ -9,8 +9,8 @@ on:
         description: "Render a video even if today's video limit was reached"
         type: boolean
         default: false
-      sample:
-        description: "Only render samples/preview.json to preview the video format (never publishes)"
+      preview:
+        description: "Dry run that only makes the video and pushes it to the previews branch"
         type: boolean
         default: false
 
@@ -31,7 +31,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - uses: denoland/setup-deno@v2   # JavaScript runtime yt-dlp needs for YouTube
+        with:
+          deno-version: v2.x
       - run: pip install -r requirements.txt
 
       - name: Run bot
@@ -39,12 +42,11 @@ jobs:
           DRY_RUN: ${{ vars.DRY_RUN || 'true' }}
           BOT_HANDLE: ${{ vars.BOT_HANDLE }}
           BOT_LANGUAGE: ${{ vars.BOT_LANGUAGE }}
-          TTS_VOICE: ${{ vars.TTS_VOICE }}
+          YOUTUBE_CHANNELS: ${{ vars.YOUTUBE_CHANNELS }}
+          CC_QUERIES: ${{ vars.CC_QUERIES }}
           TIKTOK_PRIVACY: ${{ vars.TIKTOK_PRIVACY }}
           MAX_VIDEOS_PER_DAY: ${{ vars.MAX_VIDEOS_PER_DAY }}
           MAX_POSTS_PER_DAY: ${{ vars.MAX_POSTS_PER_DAY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           X_API_KEY: ${{ secrets.X_API_KEY }}
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
@@ -54,7 +56,7 @@ jobs:
           TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
           TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
           GH_SECRETS_TOKEN: ${{ secrets.GH_SECRETS_TOKEN }}
-        run: python -m gtabot ${{ inputs.force_video && '--force-video' || '' }} ${{ inputs.sample && '--sample samples/preview.json' || '' }}
+        run: python -m gtabot ${{ inputs.force_video && '--force-video' || '' }} ${{ inputs.preview && '--dry-run --force-video --video-only' || '' }}
 
       - name: Keep what was published
         if: always()
@@ -66,18 +68,18 @@ jobs:
           if-no-files-found: ignore
 
       - name: Publish preview to the previews branch
-        if: inputs.sample
+        if: inputs.preview
         env:
           TOKEN: ${{ github.token }}
         run: |
-          mkdir -p /tmp/preview && cp output/*/video.mp4 output/*/content.json /tmp/preview/
+          mkdir -p /tmp/preview && cp output/*/video.mp4 output/*/video.json /tmp/preview/
           cd /tmp/preview
           git init -q -b previews
           git add . && git -c user.name=gta6-bot -c user.email=gta6-bot@users.noreply.github.com commit -qm "preview ${{ github.run_id }}"
           git push -qf "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git" previews
 
       - name: Save state
-        if: always() && !inputs.sample
+        if: always() && !inputs.preview
         run: |
           git config user.name "gta6-bot"
           git config user.email "gta6-bot@users.noreply.github.com"

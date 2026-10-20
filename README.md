@@ -1,21 +1,18 @@
 # Bot de contenido GTA VI
 
-Bot autónomo que cada 3 horas:
+Bot autónomo que cada 3 horas reutiliza contenido ya creado sobre GTA VI, de forma permitida:
 
-1. **Extrae** noticias y publicaciones de GTA VI (Google News en español e inglés, r/GTA6).
-2. **Transforma** con Claude: elige la noticia más interesante y escribe contenido original
-   (resumen con sus propias palabras, contexto, rumor vs. confirmado, pregunta a la audiencia).
-   Si no hay noticias, crea contenido *evergreen* sobre información ya confirmada.
-3. **Crea** un short vertical 1080x1920 de 30-50 s: gancho grande en los primeros 3 s, etiqueta
-   NOTICIA/RUMOR/CONFIRMADO, subtítulos palabra por palabra sincronizados con la voz en off,
-   fondos en video de stock (Pexels) con movimiento, barra de progreso y cierre con pregunta.
-   Todo dentro de la zona segura de TikTok y sin usar clips ni arte de Rockstar.
-4. **Publica** el post en X (con el video adjunto) y el video en TikTok.
+1. **X, citas con comentario.** Junta posts de X enlazados en noticias y en r/GTA6, videos del canal
+   oficial de Rockstar en YouTube y noticias de Google News. Claude elige lo mejor y escribe un
+   comentario propio. Los posts de X se **citan** (el original sigue acreditado a su autor) y lo demás
+   se comparte con su enlace.
+2. **Videos Creative Commons para TikTok y X.** Busca en YouTube videos de GTA VI con licencia
+   **CC BY**, revisa la licencia en cada video, descarga solo el tramo que usa (máx. 58 s), lo pasa a
+   vertical 1080x1920 con fondo difuminado y un titular, y pone el crédito al autor en el video y en
+   la descripción. Se salta resubidas de tráilers oficiales, que reciben reclamos aunque digan CC.
 
 Corre gratis en **GitHub Actions** (`.github/workflows/bot.yml`); no hay servidor que mantener.
-El estado (qué noticias ya se usaron, qué se publicó) se guarda en `data/state.json` y el
-workflow lo commitea al terminar cada corrida. Cada corrida sube lo generado (texto + video)
-como artifact del workflow durante 14 días.
+El estado (qué ya se compartió) se guarda en `data/state.json`, que el workflow commitea en cada corrida.
 
 ## Modo prueba
 
@@ -25,7 +22,7 @@ credencial que falte también deja ese paso en modo prueba, así que se puede ac
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt   # requiere ffmpeg
 python -m pytest -q
-python -m gtabot --dry-run --force-video                   # deja el resultado en output/
+python -m gtabot --dry-run --force-video                   # deja el resultado en output/ (requiere deno para YouTube)
 ```
 
 ## Puesta en marcha
@@ -35,11 +32,6 @@ Todo se configura en el repo: **Settings → Secrets and variables → Actions**
 ### 1. Claude (texto)
 - Crea una API key en https://console.anthropic.com → secret `ANTHROPIC_API_KEY`.
 - Sin key, el bot usa una plantilla básica (útil solo para pruebas).
-
-### 1b. Pexels (fondos en video, gratis)
-- Crea una cuenta en https://www.pexels.com/api/ y copia tu API key → secret `PEXELS_API_KEY`.
-- Sin key, el fondo es un degradado animado (sirve, pero se ve menos profesional).
-- Opcional: pon pistas de música libre de derechos (`.mp3`) en `assets/music/` y el bot las mezcla bajito.
 
 ### 2. X
 1. En https://developer.x.com crea un proyecto y una app (el plan gratis permite ~500 posts/mes).
@@ -71,17 +63,16 @@ Todo se configura en el repo: **Settings → Secrets and variables → Actions**
 - Para probar al momento: pestaña **Actions → Bot → Run workflow**.
 
 ## Contenido y derechos
-El material de GTA VI es de Rockstar Games. El bot solo publica contenido transformado
-(resúmenes, análisis, comentario) con gráficos propios, cita la fuente, separa rumores de hechos
-confirmados, se presenta como cuenta de fans no oficial y marca los videos como contenido generado
-con IA en TikTok. Eso también es lo que piden X y TikTok para monetizar.
+El bot no resube videos ajenos sin permiso. En X cita el post original, y en TikTok solo usa videos
+con licencia Creative Commons Attribution, que permite reutilizarlos dando crédito. Ojo: la licencia
+CC solo cubre lo que es del autor. Si un video usa mucho material de Rockstar, igual puede recibir un
+reclamo, por eso el bot descarta resubidas de tráilers oficiales.
 
 ## Estructura
 ```
-gtabot/sources.py      extracción (RSS)
-gtabot/writer.py       transformación con Claude (salida estructurada)
-gtabot/video.py        render del video (ffmpeg + subtítulos ASS + edge-tts)
-gtabot/broll.py        fondos en video de Pexels (licencia libre)
-gtabot/publishers/     X (API v2) y TikTok (Content Posting API)
+gtabot/sources.py      noticias, posts de X enlazados y canales de YouTube (RSS)
+gtabot/ccvideo.py      búsqueda de videos CC BY, recorte vertical con crédito
+gtabot/writer.py       Claude elige qué compartir y escribe comentarios y descripciones
+gtabot/publishers/     X (API v2, citas y video) y TikTok (Content Posting API)
 gtabot/main.py         orquestación de una corrida
 ```

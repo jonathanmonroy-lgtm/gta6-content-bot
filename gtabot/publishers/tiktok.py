@@ -80,7 +80,7 @@ class TikTokPublisher:
                 "disable_comment": False,
                 "disable_stitch": False,
                 "video_cover_timestamp_ms": 1000,
-                "is_aigc": True,
+                "is_aigc": False,
             },
             "source_info": {
                 "source": "FILE_UPLOAD",

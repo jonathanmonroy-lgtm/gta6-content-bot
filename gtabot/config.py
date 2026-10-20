@@ -57,15 +57,15 @@ class Config:
     anthropic_api_key: str | None = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
     model: str = field(default_factory=lambda: _env("CLAUDE_MODEL", "claude-opus-5-5"))
 
-    # Stock footage for video backgrounds (free key at pexels.com/api)
-    pexels_api_key: str | None = field(default_factory=lambda: _env("PEXELS_API_KEY"))
-
-    # AI images when there is no stock video: Nano Banana via Google AI Studio, else Pollinations (no key)
-    gemini_api_key: str | None = field(default_factory=lambda: _env("GEMINI_API_KEY"))
-    use_pollinations: bool = field(default_factory=lambda: _bool("USE_POLLINATIONS", True))
-
-    # Voice for TikTok narration (edge-tts voice name)
-    voice: str = field(default_factory=lambda: _env("TTS_VOICE", "es-MX-JorgeNeural"))
+    # Official channels whose YouTube videos the bot can share on X
+    youtube_channels: list[str] = field(
+        default_factory=lambda: (_env("YOUTUBE_CHANNELS") or "@RockstarGames").split()
+    )
+    # YouTube searches for Creative Commons (CC BY) videos to reuse
+    cc_queries: list[str] = field(
+        default_factory=lambda: [q.strip() for q in (_env("CC_QUERIES") or
+                                 "GTA 6|GTA VI|GTA 6 análisis|GTA 6 Leonida|GTA 6 noticias").split("|") if q.strip()]
+    )
 
     # X (OAuth 1.0a user context, app with Read and Write permission)
     x_api_key: str | None = field(default_factory=lambda: _env("X_API_KEY"))
