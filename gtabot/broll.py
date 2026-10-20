@@ -1,12 +1,19 @@
-"""Stock b-roll from Pexels (free license, commercial use allowed, no attribution required).
+"""Backgrounds for each scene, best source first:
 
-Gives the videos real moving footage (Miami, neon streets, cars, beaches) that fits the
-Vice City mood without reusing any Rockstar material.
+1. Pexels stock video (free key; commercial use allowed, no attribution required)
+2. Nano Banana / Gemini image (Google AI Studio key)
+3. Pollinations image (free, no key)
+4. None -> animated gradient
+
+All of them give the Vice City mood (Miami, neon, beaches, cars) without reusing Rockstar material.
 """
 from __future__ import annotations
 
+import base64
 import logging
+import time
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 
@@ -27,9 +34,22 @@ def _best_file(video: dict) -> dict | None:
     return min(tall, key=lambda f: f["height"]) if tall else max(pool, key=lambda f: f["height"])
 
 
+IMAGE_STYLE = (
+    "cinematic vertical photograph, {query}, Miami Florida vibe, dramatic lighting, vibrant pink and teal tones, "
+    "shallow depth of field, ultra detailed, 9:16, no text, no logos, no watermark"
+)
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}"
+
+
 class Broll:
-    def __init__(self, api_key: str | None, workdir: Path, session: requests.Session | None = None):
+    def __init__(self, api_key: str | None, workdir: Path, session: requests.Session | None = None,
+                 gemini_key: str | None = None, gemini_model: str = "gemini-2.5-flash-image",
+                 use_pollinations: bool = True):
         self.api_key = api_key
+        self.gemini_key = gemini_key
+        self.gemini_model = gemini_model
+        self.use_pollinations = use_pollinations
         self.workdir = workdir
         self.http = session or requests.Session()
         self.used: set[int] = set()
@@ -46,8 +66,56 @@ class Broll:
         long_enough = [v for v in videos if v.get("duration", 0) >= min_seconds]
         return long_enough or videos
 
+    def visual(self, query: str, min_seconds: float, name: str, seed: int = 0) -> tuple[Path | None, str]:
+        """Return (path, "video" | "image"), or (None, "none") for the animated fallback."""
+        clip = self.clip(query, min_seconds, name)
+        if clip:
+            return clip, "video"
+        image = self.image(query, name, seed)
+        if image:
+            return image, "image"
+        return None, "none"
+
+    def image(self, query: str, name: str, seed: int = 0) -> Path | None:
+        prompt = IMAGE_STYLE.format(query=query)
+        path = self.workdir / f"{name}.jpg"
+        if self.gemini_key:
+            try:
+                resp = self.http.post(
+                    GEMINI_URL.format(model=self.gemini_model),
+                    params={"key": self.gemini_key},
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "9:16"}},
+                    },
+                    timeout=120,
+                )
+                resp.raise_for_status()
+                for part in resp.json()["candidates"][0]["content"]["parts"]:
+                    if "inlineData" in part:
+                        path.write_bytes(base64.b64decode(part["inlineData"]["data"]))
+                        log.info("image '%s' -> gemini", query)
+                        return path
+            except (requests.RequestException, KeyError, IndexError) as exc:
+                log.warning("Gemini image failed for '%s': %s", query, exc)
+        if self.use_pollinations:
+            url = POLLINATIONS_URL.format(prompt=quote(prompt))
+            params = {"width": 1080, "height": 1920, "model": "flux", "nologo": "true", "seed": seed}
+            for attempt in range(3):
+                try:
+                    resp = self.http.get(url, params=params, timeout=180)
+                    if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+                        path.write_bytes(resp.content)
+                        log.info("image '%s' -> pollinations", query)
+                        return path
+                    log.warning("Pollinations %s for '%s'", resp.status_code, query)
+                except requests.RequestException as exc:
+                    log.warning("Pollinations failed for '%s': %s", query, exc)
+                time.sleep(8 * (attempt + 1))
+        return None
+
     def clip(self, query: str, min_seconds: float, name: str) -> Path | None:
-        """Download a clip for this query; None means use the animated fallback background."""
+        """Download a stock clip for this query, if a Pexels key is configured."""
         if not self.api_key:
             return None
         for q in [query, *FALLBACK_QUERIES]:

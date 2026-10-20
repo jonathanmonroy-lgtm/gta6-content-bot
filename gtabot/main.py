@@ -36,7 +36,8 @@ def render_sample(cfg: Config, path: str) -> dict:
     content = Content.model_validate_json(open(path, encoding="utf-8").read())
     run_dir = cfg.output_dir / "sample"
     video = build_video(content, cfg.handle, cfg.voice, run_dir, allow_silent=allow_silent(cfg),
-                        pexels_key=cfg.pexels_api_key)
+                        pexels_key=cfg.pexels_api_key, gemini_key=cfg.gemini_api_key,
+                        use_pollinations=cfg.use_pollinations)
     (run_dir / "content.json").write_text(content.model_dump_json(indent=2), encoding="utf-8")
     return {"status": "sample", "video": str(video)}
 
@@ -73,7 +74,8 @@ def run(cfg: Config, *, force_video: bool = False, ignore_seen: bool = False) ->
     video = None
     if want_video:
         video = build_video(content, cfg.handle, cfg.voice, run_dir,
-                            allow_silent=allow_silent(cfg), pexels_key=cfg.pexels_api_key)
+                            allow_silent=allow_silent(cfg), pexels_key=cfg.pexels_api_key, gemini_key=cfg.gemini_api_key,
+                        use_pollinations=cfg.use_pollinations)
 
     tweet = compose_tweet(content)
     result = {"status": "ok", "topic": content.topic, "mode": content.mode, "dir": str(run_dir)}

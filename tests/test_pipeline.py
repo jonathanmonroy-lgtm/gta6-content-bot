@@ -64,7 +64,7 @@ def test_prompt_mentions_evergreen_when_no_items():
 def test_dry_run_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setattr(bot, "fetch_items", lambda feeds: parse_feed(RSS, "https://feed"))
     monkeypatch.setattr("gtabot.video.asyncio.run", _no_network)
-    cfg = make_cfg(tmp_path, dry_run=True)
+    cfg = make_cfg(tmp_path, dry_run=True, use_pollinations=False)
     result = bot.run(cfg)
     assert result["status"] == "ok" and result["video"]
     video = Path(result["dir"]) / "video.mp4"
@@ -159,3 +159,14 @@ def test_captions_never_overlap():
 
     spans = [(secs(a), secs(b)) for a, b in captions]
     assert all(prev[1] <= cur[0] for prev, cur in zip(spans, spans[1:]))
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg missing")
+def test_image_background_has_motion(tmp_path):
+    from PIL import Image
+    from gtabot.video import background
+    img = tmp_path / "a.jpg"
+    Image.radial_gradient("L").resize((1080, 1920)).convert("RGB").save(img)
+    out = tmp_path / "bg.mp4"
+    background(img, "image", 1.0, 0, out)
+    assert out.stat().st_size > 1000

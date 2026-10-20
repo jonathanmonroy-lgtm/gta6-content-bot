@@ -60,6 +60,10 @@ class Config:
     # Stock footage for video backgrounds (free key at pexels.com/api)
     pexels_api_key: str | None = field(default_factory=lambda: _env("PEXELS_API_KEY"))
 
+    # AI images when there is no stock video: Nano Banana via Google AI Studio, else Pollinations (no key)
+    gemini_api_key: str | None = field(default_factory=lambda: _env("GEMINI_API_KEY"))
+    use_pollinations: bool = field(default_factory=lambda: _bool("USE_POLLINATIONS", True))
+
     # Voice for TikTok narration (edge-tts voice name)
     voice: str = field(default_factory=lambda: _env("TTS_VOICE", "es-MX-JorgeNeural"))
 

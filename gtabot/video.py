@@ -118,16 +118,27 @@ ENCODE = ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-maxrate", "8M"
           "-pix_fmt", "yuv420p", "-r", str(FPS)]
 
 
-def background(clip: Path | None, seconds: float, index: int, out: Path) -> None:
-    if clip:
+def background(source: Path | None, kind: str, seconds: float, index: int, out: Path) -> None:
+    grade = "eq=saturation=1.18:contrast=1.06"
+    if kind == "video":
         direction = "(iw-ow)*t/{d}" if index % 2 == 0 else "(iw-ow)*(1-t/{d})"
         vf = (
             f"scale={int(W * 1.12)}:{int(H * 1.12)}:force_original_aspect_ratio=increase,"
             f"crop={int(W * 1.12)}:{int(H * 1.12)},"
             f"crop={W}:{H}:x='{direction.format(d=seconds)}':y='(ih-oh)/2',"
-            "eq=saturation=1.18:contrast=1.06,fps=30,setsar=1"
+            f"{grade},fps=30,setsar=1"
         )
-        _ffmpeg(["-stream_loop", "-1", "-i", str(clip), "-t", f"{seconds:.3f}", "-vf", vf, "-an", *ENCODE, str(out)])
+        _ffmpeg(["-stream_loop", "-1", "-i", str(source), "-t", f"{seconds:.3f}", "-vf", vf, "-an", *ENCODE, str(out)])
+    elif kind == "image":
+        # Ken Burns: slow push in (or out on odd scenes), rendered at 2x to avoid zoompan jitter
+        frames = int(seconds * FPS) + 1
+        zoom = f"1+0.14*on/{frames}" if index % 2 == 0 else f"1.14-0.14*on/{frames}"
+        vf = (
+            f"scale={W * 2}:{H * 2}:force_original_aspect_ratio=increase,crop={W * 2}:{H * 2},"
+            f"zoompan=z='{zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps={FPS},"
+            f"{grade},setsar=1"
+        )
+        _ffmpeg(["-loop", "1", "-i", str(source), "-t", f"{seconds:.3f}", "-vf", vf, *ENCODE, str(out)])
     else:
         src = (
             f"gradients=s={W}x{H}:r={FPS}:n=4:c0=0x14062b:c1=0xff2d95:c2=0x00b8d4:c3=0x3a0ca3:"
@@ -233,11 +244,12 @@ def build_ass(content: Content, segments: list[Segment], handle: str) -> str:
 # Assembly ------------------------------------------------------------------
 
 def build_video(content: Content, handle: str, voice: str, workdir: Path,
-                allow_silent: bool = False, pexels_key: str | None = None) -> Path:
+                allow_silent: bool = False, pexels_key: str | None = None,
+                gemini_key: str | None = None, use_pollinations: bool = True) -> Path:
     if not shutil.which("ffmpeg"):
         raise RuntimeError("ffmpeg is required to render videos")
     workdir.mkdir(parents=True, exist_ok=True)
-    broll = Broll(pexels_key, workdir)
+    broll = Broll(pexels_key, workdir, gemini_key=gemini_key, use_pollinations=use_pollinations)
 
     segments, backgrounds, audios = [], [], []
     for i, scene in enumerate(content.scenes):
@@ -246,7 +258,8 @@ def build_video(content: Content, handle: str, voice: str, workdir: Path,
         segments.append(seg)
 
         bg = workdir / f"bg{i}.mp4"
-        background(broll.clip(scene.broll, seconds, f"clip{i}"), seconds, i, bg)
+        source, kind = broll.visual(scene.broll, seconds, f"clip{i}", seed=random.randint(1, 10**6))
+        background(source, kind, seconds, i, bg)
         backgrounds.append(bg)
 
         wav = workdir / f"voice{i}.wav" if seg.audio.suffix != ".wav" else seg.audio.with_name(f"pad{i}.wav")
@@ -288,7 +301,7 @@ def build_video(content: Content, handle: str, voice: str, workdir: Path,
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {proc.stderr[-1500:]}")
     for f in workdir.iterdir():  # keep only the final video, the captions and the json files
-        if f.suffix in {".wav", ".mp3", ".png", ".txt"} or (f.suffix == ".mp4" and f != final):
+        if f.suffix in {".wav", ".mp3", ".png", ".jpg", ".txt"} or (f.suffix == ".mp4" and f != final):
             f.unlink()
     log.info("Video rendered: %s (%.1fs)", final, _duration(final))
     return final
