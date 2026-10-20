@@ -1,0 +1,8 @@
+anthropic>=1.17,<2
+pydantic>=2.7
+feedparser>=6.0
+requests>=2.32
+requests-oauthlib>=2.0
+edge-tts>=7.0
+pillow>=10.0
+pynacl>=1.5
