@@ -36,6 +36,8 @@ jobs:
         with:
           deno-version: v2.x
       - run: pip install -r requirements.txt
+      # YouTube changes often; the nightly yt-dlp carries the newest fixes
+      - run: pip install -U --pre "yt-dlp[default]"
 
       - name: YouTube cookies
         env:
