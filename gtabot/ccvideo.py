@@ -6,6 +6,7 @@ each video page, downloads only the segment it needs, turns it vertical and cred
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -43,7 +44,11 @@ class CCVideo:
 def _ydl(opts: dict):
     from yt_dlp import YoutubeDL
 
-    return YoutubeDL({"quiet": True, "no_warnings": True, **opts})
+    base = {"quiet": True, "no_warnings": True}
+    cookies = os.environ.get("YT_COOKIES_FILE")
+    if cookies and Path(cookies).is_file():  # YouTube blocks datacenter IPs without a signed-in session
+        base["cookiefile"] = cookies
+    return YoutubeDL({**base, **opts})
 
 
 def is_cc_by(info: dict) -> bool:
@@ -78,6 +83,9 @@ def find(queries: list[str], seen: set[str], per_query: int = 15) -> CCVideo | N
                 info = _ydl({}).extract_info(f"https://www.youtube.com/watch?v={vid}", download=False)
             except Exception as exc:
                 log.warning("Could not read video %s: %s", vid, exc)
+                if "not a bot" in str(exc):
+                    log.error("YouTube is blocking this machine; set the YT_COOKIES secret (see README)")
+                    return None
                 continue
             if acceptable(info):
                 log.info("CC BY video found: %s (%s)", info["title"], info.get("channel"))

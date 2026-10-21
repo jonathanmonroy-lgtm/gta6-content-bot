@@ -37,6 +37,15 @@ jobs:
           deno-version: v2.x
       - run: pip install -r requirements.txt
 
+      - name: YouTube cookies
+        env:
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+        run: |
+          if [ -n "$YT_COOKIES" ]; then
+            printf '%s\n' "$YT_COOKIES" > "$RUNNER_TEMP/yt_cookies.txt"
+            echo "YT_COOKIES_FILE=$RUNNER_TEMP/yt_cookies.txt" >> "$GITHUB_ENV"
+          fi
+
       - name: Run bot
         env:
           DRY_RUN: ${{ vars.DRY_RUN || 'true' }}
@@ -68,7 +77,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Publish preview to the previews branch
-        if: inputs.preview
+        if: inputs.preview && hashFiles('output/*/video.mp4') != ''
         env:
           TOKEN: ${{ github.token }}
         run: |

@@ -56,10 +56,18 @@ Todo se configura en el repo: **Settings → Secrets and variables → Actions**
 6. TikTok rota el refresh token. Para que el bot lo guarde solo, crea un *fine-grained token* de
    GitHub con permiso **Secrets: Read and write** sobre este repo → secret `GH_SECRETS_TOKEN`.
 
-### 4. Activar
+### 4. YouTube (cookies)
+YouTube bloquea las descargas desde los servidores de GitHub ("confirma que no eres un bot").
+El bot usa la sesión de una **cuenta secundaria** de YouTube (nunca la principal):
+1. En una ventana privada del navegador inicia sesión en youtube.com con esa cuenta.
+2. Con la extensión *Get cookies.txt LOCALLY* exporta las cookies de youtube.com (formato Netscape)
+   y cierra la ventana sin cerrar sesión.
+3. Pega el contenido completo del archivo en el secret `YT_COOKIES`.
+Si en los logs vuelve a aparecer el bloqueo, las cookies caducaron: repite los pasos.
+
+### 5. Activar
 - Variable `DRY_RUN=false`.
-- Opcionales: `BOT_HANDLE` (ej. `@TuCuenta`), `BOT_LANGUAGE` (`es`), `TTS_VOICE`
-  (`es-MX-JorgeNeural`, `es-MX-DaliaNeural`, ...), `MAX_VIDEOS_PER_DAY` (3), `MAX_POSTS_PER_DAY` (8).
+- Opcionales: `BOT_HANDLE` (ej. `@TuCuenta`), `BOT_LANGUAGE` (`es`), `MAX_VIDEOS_PER_DAY` (3), `MAX_POSTS_PER_DAY` (8).
 - Para probar al momento: pestaña **Actions → Bot → Run workflow**.
 
 ## Contenido y derechos
